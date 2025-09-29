@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control de Copia de CDs Automática (Node.js/Express)</title>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            padding: 20px; 
+            background-color: #f4f7f9;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: #ffffff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 25px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #555;
+        }
+        input[type="text"] {
+            width: calc(100% - 20px);
+            padding: 10px;
+            margin-bottom: 20px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        button {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.3s;
+            margin-right: 10px;
+        }
+        #startButton {
+            background-color: #4CAF50;
+            color: white;
+        }
+        #startButton:hover:not(:disabled) {
+            background-color: #45a049;
+        }
+        #stopButton {
+            background-color: #f44336;
+            color: white;
+        }
+        #stopButton:hover:not(:disabled) {
+            background-color: #da190b;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+            color: #666;
+        }
+        #status-display { 
+            margin-top: 30px; 
+            padding: 15px; 
+            border: 1px solid #007bff; 
+            background-color: #eaf6ff;
+            border-radius: 6px;
+            font-size: 1.1em;
+        }
+        #currentStatus {
+            font-weight: normal;
+            color: #0056b3;
+            display: block;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>💿 Copia Masiva de CDs/DVDs</h1>
+
+        <div>
+            <label for="baseNameInput">Nombre Base para Carpetas:</label>
+            <input type="text" id="baseNameInput" value="CD_ARCHIVE_" required>
+        </div>
+
+        <button id="startButton" onclick="startCopy()">Iniciar Copia Automática</button>
+        <button id="stopButton" onclick="stopCopy()" disabled>Detener</button>
+
+        <div id="status-display">
+            <strong>Estado del Proceso:</strong> 
+            <span id="currentStatus">Esperando conexión con el servidor...</span>
+        </div>
+    </div>
+
+    <script>
+        const baseNameInput = document.getElementById('baseNameInput');
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const statusDisplay = document.getElementById('currentStatus');
+
+        const POLLING_INTERVAL = 2000; // Consultar estado cada 2 segundos
+        
+        // --- 1. FUNCIONES DE ACCIÓN (INICIO/PARADA) ---
+
+        async function startCopy() {
+            const baseName = baseNameInput.value.trim();
+            if (!baseName) {
+                alert('Escribe un nombre base válido.');
+                return;
+            }
+
+            startButton.disabled = true;
+            statusDisplay.textContent = "Enviando comando de inicio...";
+
+            try {
+                const response = await fetch('/api/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ baseName: baseName })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    // El polling actualizará el estado
+                } else {
+                    alert('Error al iniciar: ' + result.message);
+                    startButton.disabled = false;
+                }
+            } catch (error) {
+                console.error('Error de red al iniciar:', error);
+                alert('Error: No se pudo conectar con el servidor de Node.js. Asegúrate de que esté corriendo.');
+                startButton.disabled = false;
+            }
+        }
+
+        async function stopCopy() {
+            stopButton.disabled = true;
+            statusDisplay.textContent = "Enviando comando de detención...";
+
+            try {
+                await fetch('/api/stop', { method: 'POST' });
+                // El polling actualizará el estado a "Deteniendo..."
+            } catch (error) {
+                console.error('Error de red al detener:', error);
+                alert('Error: No se pudo conectar al servidor para detener.');
+                stopButton.disabled = false;
+            }
+        }
+
+        // --- 2. FUNCIÓN DE MONITOREO (POLLING) ---
+
+        /**
+         * Consulta el estado del servidor cada 2 segundos y actualiza la GUI.
+         */
+        function pollStatus() {
+            setInterval(async () => {
+                try {
+                    const response = await fetch('/api/status');
+                    const data = await response.json();
+                    
+                    // Actualiza el mensaje de estado
+                    statusDisplay.textContent = `[Disco #${data.counter}] ${data.status}`;
+                    
+                    // Maneja el estado de los botones
+                    if (data.running) {
+                        startButton.disabled = true;
+                        stopButton.disabled = false;
+                        baseNameInput.disabled = true;
+                    } else {
+                        startButton.disabled = false;
+                        stopButton.disabled = true;
+                        baseNameInput.disabled = false;
+                    }
+                } catch (error) {
+                    // Si falla la conexión, asume que el servidor está caído
+                    statusDisplay.textContent = "ERROR: Servidor desconectado. Inicia 'node server.js'.";
+                    startButton.disabled = true;
+                    stopButton.disabled = true;
+                    baseNameInput.disabled = true;
+                }
+            }, POLLING_INTERVAL);
+        }
+
+        // Inicia el bucle de monitoreo al cargar la página
+        pollStatus(); 
+    </script>
+</body>
+</html>
